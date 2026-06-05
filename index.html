@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Roster Agent</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; height: 100vh; }
+
+    /* Sidebar */
+    #sidebar {
+      width: 320px; background: #1e1e2e; color: #cdd6f4;
+      display: flex; flex-direction: column; padding: 20px; gap: 16px; overflow-y: auto;
+    }
+    #sidebar h2 { font-size: 16px; color: #89b4fa; border-bottom: 1px solid #313244; padding-bottom: 10px; }
+    .team-block { background: #313244; border-radius: 8px; padding: 12px; }
+    .team-block h3 { font-size: 13px; color: #cba6f7; margin-bottom: 8px; }
+    .member-row {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 12px; padding: 4px 0; border-bottom: 1px solid #45475a;
+    }
+    .member-row:last-child { border-bottom: none; }
+    .shift-badge {
+      font-size: 10px; font-weight: bold; padding: 2px 8px;
+      border-radius: 10px; cursor: pointer; border: none; color: white;
+    }
+    .L1 { background: #89b4fa; }
+    .L2 { background: #a6e3a1; color: #1e1e2e; }
+    .week-off-info { font-size: 11px; color: #f38ba8; margin-top: 4px; }
+
+    /* Main */
+    #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Roster view */
+    #roster-panel {
+      background: white; padding: 16px; border-bottom: 1px solid #ddd;
+      max-height: 280px; overflow-y: auto;
+    }
+    #roster-panel h2 { font-size: 15px; color: #1e1e2e; margin-bottom: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: #1e1e2e; color: white; padding: 6px 10px; text-align: left; }
+    td { padding: 6px 10px; border-bottom: 1px solid #eee; }
+    tr:nth-child(even) { background: #f8f8f8; }
+    .off-day { color: #aaa; font-style: italic; }
+    .on-L1 { color: #1d4ed8; font-weight: 600; }
+    .on-L2 { color: #15803d; font-weight: 600; }
+    .on-leave { color: #dc2626; font-weight: 600; }
+
+    /* Chat */
+    #chat-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .msg { max-width: 75%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+    .user-msg { background: #1e1e2e; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+    .agent-msg { background: white; color: #1e1e2e; align-self: flex-start; border-bottom-left-radius: 2px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); white-space: pre-wrap; }
+    .loading { color: #888; font-style: italic; }
+
+    #input-area { display: flex; gap: 8px; padding: 12px 16px; background: white; border-top: 1px solid #ddd; }
+    #user-input {
+      flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 20px;
+      font-size: 14px; outline: none;
+    }
+    #user-input:focus { border-color: #89b4fa; }
+    #send-btn {
+      background: #1e1e2e; color: white; border: none; border-radius: 20px;
+      padding: 10px 20px; cursor: pointer; font-size: 14px;
+    }
+    #send-btn:hover { background: #313244; }
+
+    #week-nav { display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: #f8f8f8; border-bottom: 1px solid #ddd; font-size: 13px; }
+    #week-nav button { background: #1e1e2e; color: white; border: none; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar: Team Members -->
+<div id="sidebar">
+  <h2>Team Members</h2>
+  <div class="team-block">
+    <h3>Team 1 — <span id="t1-weekoff"></span></h3>
+    <div id="team1-list"></div>
+  </div>
+  <div class="team-block">
+    <h3>Team 2 — <span id="t2-weekoff"></span></h3>
+    <div id="team2-list"></div>
+  </div>
+  <div style="font-size:11px; color:#6c7086; margin-top:8px;">
+    Click a shift badge to toggle L1/L2 for a member.
+  </div>
+</div>
+
+<!-- Main Panel -->
+<div id="main">
+  <!-- Week navigation + Roster -->
+  <div id="week-nav">
+    <button onclick="changeWeek(-1)">◀ Prev</button>
+    <span id="week-label"></span>
+    <button onclick="changeWeek(1)">Next ▶</button>
+    <button onclick="loadRoster()" style="margin-left:auto; background:#313244;">Refresh Roster</button>
+  </div>
+  <div id="roster-panel">
+    <h2>Weekly Roster</h2>
+    <table>
+      <thead>
+        <tr id="roster-head"></tr>
+      </thead>
+      <tbody id="roster-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Chat -->
+  <div id="chat-panel">
+    <div id="messages">
+      <div class="msg agent-msg">👋 Hi! I'm your Roster Agent. You can ask me things like:
+- "Show me this week's roster"
+- "Log sick leave for Arun on Monday"
+- "Request vacation for Krishna from June 20 to June 25"
+- "Who's on L1 shift today?"
+- "Log a comp off for Vimal on Friday"
+- "Who's working tomorrow?"</div>
+    </div>
+    <div id="input-area">
+      <input id="user-input" type="text" placeholder="Ask me anything about the roster..." onkeydown="if(event.key==='Enter') sendMessage()" />
+      <button id="send-btn" onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ─── Team Data ────────────────────────────────────────────────────────────────
+  const teamData = {
+    team1: {
+      name: "Team 1",
+      members: [
+        { name: "Siraj", shift: "L1" },
+        { name: "Arun", shift: "L1" },
+        { name: "Krishna", shift: "L1" },
+        { name: "Vimal", shift: "L1" },
+        { name: "Abhishek", shift: "L2" },
+        { name: "Banu", shift: "L2" },
+        { name: "Subhrasom", shift: "L2" }
+      ]
+    },
+    team2: {
+      name: "Team 2",
+      members: [
+        { name: "Vinod", shift: "L1" },
+        { name: "Krishna K", shift: "L1" },
+        { name: "Vishal", shift: "L1" },
+        { name: "Pradeesh", shift: "L1" },
+        { name: "Meenakshi", shift: "L2" },
+        { name: "Ravi", shift: "L2" },
+        { name: "Abhinatha", shift: "L2" }
+      ]
+    }
+  };
+
+  // Week-off: Q1&Q3 → Team1: Mon-Wed, Team2: Thu-Sat
+  //           Q2&Q4 → Team1: Thu-Sat, Team2: Mon-Wed
+  function getWeekOffPattern(date) {
+    const q = Math.floor(date.getMonth() / 3); // 0,1,2,3
+    const isQ1orQ3 = q === 0 || q === 2;
+    return {
+      team1: isQ1orQ3 ? [1,2,3] : [4,5,6],  // day numbers: 1=Mon...7=Sun (JS: 0=Sun)
+      team2: isQ1orQ3 ? [4,5,6] : [1,2,3]
+    };
+  }
+
+  // Convert JS getDay() (0=Sun) to Mon-based (1=Mon...7=Sun)
+  function jsToMon(d) { return d === 0 ? 7 : d; }
+
+  function isWeekOff(team, date) {
+    const pattern = getWeekOffPattern(date);
+    const dayMon = jsToMon(date.getDay());
+    return pattern[team].includes(dayMon);
+  }
+
+  // ─── Week navigation ──────────────────────────────────────────────────────────
+  let currentWeekOffset = 0;
+
+  function getWeekStart(offset) {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
+    const monday = new Date(now.setDate(diff));
+    monday.setDate(monday.getDate() + offset * 7);
+    monday.setHours(0,0,0,0);
+    return monday;
+  }
+
+  function changeWeek(dir) {
+    currentWeekOffset += dir;
+    loadRoster();
+  }
+
+  // ─── Sidebar render ───────────────────────────────────────────────────────────
+  function renderSidebar() {
+    const today = new Date();
+    const pattern = getWeekOffPattern(today);
+    const dayNames = ['','Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+    document.getElementById('t1-weekoff').textContent =
+      'Off: ' + pattern.team1.map(d => dayNames[d]).join(', ');
+    document.getElementById('t2-weekoff').textContent =
+      'Off: ' + pattern.team2.map(d => dayNames[d]).join(', ');
+
+    renderTeamList('team1-list', teamData.team1.members, 'team1');
+    renderTeamList('team2-list', teamData.team2.members, 'team2');
+  }
+
+  function renderTeamList(containerId, members, teamKey) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    members.forEach((m, i) => {
+      const row = document.createElement('div');
+      row.className = 'member-row';
+      row.innerHTML = `
+        <span>${m.name}</span>
+        <button class="shift-badge ${m.shift}" onclick="toggleShift('${teamKey}', ${i})">${m.shift}</button>
+      `;
+      container.appendChild(row);
+    });
+  }
+
+  function toggleShift(teamKey, index) {
+    const member = teamData[teamKey].members[index];
+    member.shift = member.shift === 'L1' ? 'L2' : 'L1';
+    renderSidebar();
+    loadRoster();
+  }
+
+  // ─── Roster Table ─────────────────────────────────────────────────────────────
+  async function loadRoster() {
+    const weekStart = getWeekStart(currentWeekOffset);
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      days.push(d);
+    }
+
+    // Update label
+    const fmt = d => d.toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+    document.getElementById('week-label').textContent =
+      `Week of ${fmt(days[0])} – ${fmt(days[6])}`;
+
+    // Get leaves from API
+    let leaves = [];
+    try {
+      const res = await fetch('/api/leaves');
+      const data = await res.json();
+      leaves = data.leaves || [];
+    } catch(e) {}
+
+    const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const head = document.getElementById('roster-head');
+    const body = document.getElementById('roster-body');
+
+    head.innerHTML = '<th>Member</th>' + days.map((d,i) =>
+      `<th>${dayNames[i]}<br><small>${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</small></th>`
+    ).join('');
+
+    const allMembers = [
+      ...teamData.team1.members.map(m => ({ ...m, team: 'team1' })),
+      ...teamData.team2.members.map(m => ({ ...m, team: 'team2' }))
+    ];
+
+    body.innerHTML = allMembers.map(member => {
+      const cells = days.map(day => {
+        // Check leave
+        const dateStr = day.toISOString().split('T')[0];
+        const leaveEntry = leaves.find(l =>
+          l.member.toLowerCase() === member.name.toLowerCase() &&
+          dateStr >= l.startDate && dateStr <= l.endDate &&
+          l.status !== 'rejected'
+        );
+
+        if (leaveEntry) {
+          return `<td class="on-leave">${leaveEntry.type}</td>`;
+        }
+
+        if (isWeekOff(member.team, day)) {
+          return `<td class="off-day">Off</td>`;
+        }
+
+        const shiftLabel = member.shift === 'L1'
+          ? '<span class="on-L1">L1 6am-4pm</span>'
+          : '<span class="on-L2">L2 8am-6pm</span>';
+        return `<td>${shiftLabel}</td>`;
+      }).join('');
+
+      return `<tr><td><strong>${member.name}</strong></td>${cells}</tr>`;
+    }).join('');
+  }
+
+  // ─── Chat ─────────────────────────────────────────────────────────────────────
+  const conversationHistory = [];
+
+  async function sendMessage() {
+    const input = document.getElementById('user-input');
+    const text = input.value.trim();
+    if (!text) return;
+
+    addMessage(text, 'user');
+    input.value = '';
+
+    const loadingEl = addMessage('Thinking...', 'agent', true);
+
+    conversationHistory.push({ role: 'user', content: text });
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: conversationHistory,
+          teamData,
+          currentDate: new Date().toISOString()
+        })
+      });
+      const data = await res.json();
+      loadingEl.remove();
+
+      const reply = data.reply || 'Sorry, something went wrong.';
+      addMessage(reply, 'agent');
+      conversationHistory.push({ role: 'assistant', content: reply });
+
+      // Refresh roster after any potential leave changes
+      loadRoster();
+    } catch(e) {
+      loadingEl.remove();
+      addMessage('Error connecting to the server. Please try again.', 'agent');
+    }
+  }
+
+  function addMessage(text, role, isLoading = false) {
+    const messages = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = `msg ${role}-msg${isLoading ? ' loading' : ''}`;
+    div.textContent = text;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+    return div;
+  }
+
+  // ─── Init ─────────────────────────────────────────────────────────────────────
+  renderSidebar();
+  loadRoster();
+</script>
+</body>
+</html>
